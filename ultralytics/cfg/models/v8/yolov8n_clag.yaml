@@ -1,0 +1,41 @@
+nc: 6
+depth_multiple: 0.33
+width_multiple: 0.25
+
+backbone:
+  - [-1, 1, Conv, [64, 3, 2]]        # 0
+  - [-1, 1, Conv, [128, 3, 2]]       # 1
+  - [-1, 3, C2f,  [128, True]]       # 2  (P3)
+  - [-1, 1, Conv, [256, 3, 2]]       # 3
+  - [-1, 6, C2f,  [256, True]]       # 4  (P4)
+  - [-1, 1, Conv, [512, 3, 2]]       # 5
+  - [-1, 3, C2f,  [512, True]]       # 6
+  - [-1, 1, SPPF, [512, 5]]          # 7  (P5)
+
+head:
+  # ====== P5 -> P4：Upsample + CLAG（并与 baseline 并联） ======
+  - [ 7,  1, nn.Upsample, [None, 2, "nearest"]]   # 8 up_p5
+  - [[4, 8, 4], 1, CLAG, [256, 256, 256]]         # 9  guided_p4
+  - [[8, 4], 1, Concat, [1]]                      # 10 baseline cat
+  - [-1, 3, C2f, [256]]                           # 11 p4_baseline
+  - [[9, 11], 1, Concat, [1]]                     # 12
+  - [-1, 3, C2f, [256]]                           # 13 P4_refined
+
+  # ====== P4 -> P3：Upsample + CLAG（并与 baseline 并联） ======
+  - [ 13, 1, nn.Upsample, [None, 2, "nearest"]]   # 14 up_p4
+  - [[2, 14, 2], 1, CLAG, [128, 128, 128]]        # 15 guided_p3
+  - [[14, 2], 1, Concat, [1]]                     # 16 baseline cat
+  - [-1, 3, C2f, [128]]                           # 17 p3_baseline
+  - [[15, 17], 1, Concat, [1]]                    # 18
+  - [-1, 3, C2f, [128]]                           # 19 P3_out
+
+  # ====== 下行聚合回到 P4 / P5 ======
+  - [-1, 1, Conv, [256, 3, 2]]                    # 20
+  - [[-1, 13], 1, Concat, [1]]                    # 21
+  - [-1, 3, C2f, [256]]                           # 22 P4_out
+
+  - [-1, 1, Conv, [512, 3, 2]]                    # 23
+  - [[-1, 7], 1, Concat, [1]]                     # 24
+  - [-1, 3, C2f, [512]]                           # 25 P5_out
+
+  - [[19, 22, 25], 1, Detect, [nc]]               # 26
